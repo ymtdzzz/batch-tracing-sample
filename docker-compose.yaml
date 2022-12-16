@@ -1,0 +1,69 @@
+version: '3'
+
+services:
+  jaeger:
+    container_name: jaeger
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+    networks:
+      - default
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+  my-queue:
+    container_name: rabbitmq
+    image: rabbitmq:3.9.26-management
+    networks:
+      - default
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    volumes:
+      - ./rabbitmq-data:/var/lib/rabbitmq
+  batch:
+    container_name: batch
+    working_dir: /go/batch
+    build:
+      context: ./notification-manager
+      dockerfile: ./Dockerfile
+    image: notification-batch:local
+    volumes:
+      - ./notification-manager/:/go/batch
+    command: air -c .air.batch.toml
+    depends_on:
+      - jaeger
+      - my-queue
+      - server
+  worker:
+    container_name: worker
+    working_dir: /go/worker
+    build:
+      context: ./notification-manager
+      dockerfile: ./Dockerfile
+    image: notification-worker:local
+    volumes:
+      - ./notification-manager/:/go/worker
+    command: air -c .air.worker.toml
+    depends_on:
+      - jaeger
+      - my-queue
+      - server
+  server:
+    container_name: server
+    build:
+      context: ./notification-server
+      dockerfile: ./Dockerfile
+    image: notification-server:local
+    volumes:
+      - ./notification-server/:/go/notification-server
+    command: air -c .air.toml
+    depends_on:
+      - jaeger
+      - my-queue
+
+volumes:
+  rabbitmq-data:
+
+networks:
+  default:
+    name: batch-tracing-sample-network
